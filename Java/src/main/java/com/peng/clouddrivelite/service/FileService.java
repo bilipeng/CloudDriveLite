@@ -300,6 +300,42 @@ public class FileService {
         // 默认返回二进制流
         return MediaType.APPLICATION_OCTET_STREAM_VALUE;
     }
+
+    /**
+     * 将文件复制到 RawBox 数据目录
+     * @param fo 文件对象
+     * @return RawBox 中的文件名
+     * @throws IOException 复制失败时抛出异常
+     */
+    public String copyToRawBox(FileObject fo) throws IOException {
+        if (fo.isFolder()) {
+            throw new IllegalArgumentException("文件夹不能复制到 RawBox");
+        }
+        
+        // RawBox 数据目录路径 - 使用相对路径
+        String rawboxDir = "rawbox-data/public";
+        Path rawboxPath = Paths.get(rawboxDir);
+        
+        // 确保目录存在
+        Files.createDirectories(rawboxPath);
+        
+        // 生成唯一的文件名，避免冲突
+        String originalName = fo.getFileName();
+        String extension = "";
+        int dotIndex = originalName.lastIndexOf('.');
+        if (dotIndex > 0) {
+            extension = originalName.substring(dotIndex);
+        }
+        
+        String rawboxFileName = "file_" + fo.getId() + "_" + System.currentTimeMillis() + extension;
+        Path targetPath = rawboxPath.resolve(rawboxFileName);
+        
+        // 复制文件
+        Files.copy(Paths.get(fo.getFilePath()), targetPath);
+        
+        System.out.println("文件已复制到 RawBox: " + targetPath);
+        return rawboxFileName;
+    }
 }
 
 

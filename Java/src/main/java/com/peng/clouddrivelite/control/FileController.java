@@ -30,7 +30,7 @@ public class FileController {
     private final FileService fileService;
 
     // 文件大小限制：100MB
-    private static final long MAX_FILE_SIZE = 100 * 1024 * 1024;
+//    private static final long MAX_FILE_SIZE = 100 * 1024 * 1024;
 
     // 允许的文件类型（可选，用于额外验证）
     private static final String[] ALLOWED_EXTENSIONS = {
@@ -74,9 +74,9 @@ public class FileController {
         }
 
         // 检查文件大小
-        if (file.getSize() > MAX_FILE_SIZE) {
-            throw new RuntimeException("文件大小不能超过 " + (MAX_FILE_SIZE / 1024 / 1024) + "MB");
-        }
+//        if (file.getSize() > MAX_FILE_SIZE) {
+//            throw new RuntimeException("文件大小不能超过 " + (MAX_FILE_SIZE / 1024 / 1024) + "MB");
+//        }
 
         // 检查文件扩展名
         String extension = getFileExtension(originalFilename);
@@ -337,15 +337,20 @@ public class FileController {
             FileObject fo = fileService.findOwned(userId, id)
                     .orElseThrow(() -> new RuntimeException("文件不存在或无权限"));
 
-            if (!fileService.isImage(fo)) {
-                throw new RuntimeException("仅支持图片预览，当前文件类型: " + fo.getFileType());
-            }
-
-            System.out.println("预览图片: " + fo.getFileName() + " (" + fo.getFileType() + ")");
+            System.out.println("预览文件: " + fo.getFileName() + " (" + fo.getFileType() + ")");
 
             Resource resource = fileService.loadAsResource(fo);
+            
+            // 设置适当的 Content-Type
+            MediaType contentType = MediaType.parseMediaType(fo.getFileType());
+            
+            // 对于文本文件，设置 charset
+            if (fo.getFileType().startsWith("text/")) {
+                contentType = new MediaType("text", "plain", StandardCharsets.UTF_8);
+            }
+            
             return ResponseEntity.ok()
-                    .contentType(MediaType.parseMediaType(fo.getFileType()))
+                    .contentType(contentType)
                     .body(resource);
         } catch (Exception e) {
             System.err.println("预览文件失败 ID: " + id + ", 错误: " + e.getMessage());
@@ -367,6 +372,31 @@ public class FileController {
             }
 
             String previewUrl = "/api/files/" + id + "/preview";
+            Map<String, String> result = Map.of(
+                    "previewUrl", previewUrl,
+                    "fileName", fo.getFileName(),
+                    "fileType", fo.getFileType()
+            );
+
+            return ApiResponse.success("获取预览链接成功", result);
+        } catch (Exception e) {
+            System.err.println("获取预览链接失败 ID: " + id + ", 错误: " + e.getMessage());
+            return ApiResponse.error("获取预览链接失败: " + e.getMessage());
+        }
+    }
+
+    @GetMapping("/{id}/rawbox-preview")
+    public ApiResponse<Map<String, String>> getRawBoxPreviewUrl(@PathVariable Long id, HttpSession session) {
+        try {
+            Long userId = requireUser(session);
+            System.out.println("用户ID " + userId + " 请求文件预览链接 ID: " + id);
+
+            FileObject fo = fileService.findOwned(userId, id)
+                    .orElseThrow(() -> new RuntimeException("文件不存在或无权限"));
+
+            // 直接使用我们的后端预览接口，不依赖 RawBox
+            String previewUrl = "/api/files/" + id + "/preview";
+            
             Map<String, String> result = Map.of(
                     "previewUrl", previewUrl,
                     "fileName", fo.getFileName(),

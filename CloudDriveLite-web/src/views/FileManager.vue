@@ -45,11 +45,12 @@
           </el-table-column>
           <el-table-column prop="updatedAt" label="修改时间" width="200" />
           <el-table-column prop="sizeText" label="大小" width="140" />
-          <el-table-column label="操作" width="230">
+          <el-table-column label="操作" width="300">
             <template #default="{ row }">
               <el-button size="small" @click="handleRename(row)">重命名</el-button>
               <el-button size="small" type="danger" @click="handleDelete(row)">删除</el-button>
               <el-button size="small" @click="handleDownload(row)">下载</el-button>
+              <el-button size="small" type="primary" @click="handlePreview(row)" v-if="!row.folder">预览</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -96,7 +97,7 @@
 import { ref, onMounted } from 'vue'
 import { Cloudy, Folder, Refresh, Setting, Document, Picture, VideoPlay } from '@element-plus/icons-vue'
 import Back from '@/components/Back.vue'
-import { listFiles, createFolder, renameItem, deleteItem, getBreadcrumb, type FileItem as ApiFileItem } from '@/api/files'
+import { listFiles, createFolder, renameItem, deleteItem, getBreadcrumb, getRawBoxPreviewUrl, type FileItem as ApiFileItem } from '@/api/files'
 import { ElMessage, ElMessageBox, type FormInstance } from 'element-plus'
 import Upfilebutton from '@/components/Upfilebutton.vue'
 
@@ -266,6 +267,18 @@ async function handleDelete(row: Row) {
 // 下载
 function handleDownload(row: Row) {
   window.open(`/api/files/${row.id}/download`, '_blank')
+}
+
+// 预览
+async function handlePreview(row: Row) {
+  try {
+    const previewData = await getRawBoxPreviewUrl(row.id)
+    // 在新窗口中打开 RawBox 预览链接
+    window.open(previewData.previewUrl, '_blank')
+    ElMessage.success('正在打开预览...')
+  } catch (e: any) {
+    ElMessage.error(e.message || '预览失败')
+  }
 }
 </script>
 

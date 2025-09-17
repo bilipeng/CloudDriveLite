@@ -90,3 +90,11 @@ export async function getBreadcrumb(folderId: number = 0) {
   if (!json.success) throw new Error(json.message || '获取路径失败')
   return json.data as BreadcrumbItem[]
 }
+
+// 获取 RawBox 预览链接
+export async function getRawBoxPreviewUrl(id: number) {
+  const res = await fetch(`/api/files/${id}/rawbox-preview`, { credentials: 'include' })
+  const json = await res.json()
+  if (!json.success) throw new Error(json.message || '获取预览链接失败')
+  return json.data as { previewUrl: string; fileName: string; fileType: string; rawboxFileName: string }
+}

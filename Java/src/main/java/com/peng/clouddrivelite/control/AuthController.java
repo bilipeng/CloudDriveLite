@@ -45,18 +45,24 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<?> login(@RequestParam @NotBlank String userNumber,
-                                   @RequestParam @NotBlank String password,
-                                   HttpSession session) {
-        return userService.findByUserNumber(userNumber)
-                .filter(u -> userService.verifyPassword(u, password))
-                .<ResponseEntity<?>>map(u -> {
-                    session.setAttribute(SessionKeys.SESSION_USER_ID, u.getId());
-                    session.setAttribute(SessionKeys.SESSION_USER_NUMBER, u.getUserNumber());
-                    return ResponseEntity.ok(Map.of("message", "登录成功", "userId", u.getId()));
-                })
-                .orElseGet(() -> ResponseEntity.status(401).body(Map.of("message", "账号或密码错误")));
-    }
+public ResponseEntity<?> login(@RequestParam @NotBlank String userNumber,
+                               @RequestParam @NotBlank String password,
+                               HttpSession session) {
+    return userService.findByUserNumber(userNumber)
+            .filter(u -> userService.verifyPassword(u, password))
+            .<ResponseEntity<?>>map(u -> {
+                session.setAttribute(SessionKeys.SESSION_USER_ID, u.getId());
+                session.setAttribute(SessionKeys.SESSION_USER_NUMBER, u.getUserNumber());
+                // ✅ 把 userName 带回去
+                return ResponseEntity.ok(Map.of(
+                        "message", "登录成功",
+                        "userId", u.getId(),
+                        "userName", u.getUsername()   // <- 新增这一行
+                ));
+            })
+            .orElseGet(() -> ResponseEntity.status(401)
+                    .body(Map.of("message", "账号或密码错误")));
+}
 
     @PostMapping("/logout")
     public ResponseEntity<?> logout(HttpSession session) {

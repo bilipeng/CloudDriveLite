@@ -9,6 +9,7 @@ export interface LoginParams {
 export interface LoginResponse {
   message: string
   userId: number
+  userName: string
 }
 
 // 用户注册接口
@@ -25,6 +26,9 @@ export interface RegisterResponse {
   userNumber: string
 }
 
+
+
+
 // 认证相关API
 export const authApi = {
   // 用户登录
@@ -33,9 +37,12 @@ export const authApi = {
       params: {
         userNumber: params.userNumber,
         password: params.password
+
       }
     })
   },
+
+  
 
   // 用户注册
   register: (params: RegisterParams): Promise<RegisterResponse> => {

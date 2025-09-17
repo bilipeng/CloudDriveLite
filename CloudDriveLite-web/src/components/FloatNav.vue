@@ -20,7 +20,7 @@
         <el-dropdown trigger="click">
           <span class="user">
             <el-avatar size="small" icon="User" />
-            <span style="margin-left: 8px">{{ userNumber || '用户' }}</span>
+            <span style="margin-left: 8px">{{ userName || '用户' }}</span>
             <el-icon><ArrowDown /></el-icon>
           </span>
           <template #dropdown>
@@ -47,7 +47,7 @@
   const keyword = ref('')
   
   // 获取用户信息
-  const userNumber = ref(localStorage.getItem('userNumber') || '')
+  const userName = ref(localStorage.getItem('userName') || '')
   
   // 文件夹链条数据，从父组件传入
   const props = defineProps<{

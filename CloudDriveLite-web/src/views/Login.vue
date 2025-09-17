@@ -37,14 +37,12 @@
 
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
-import { User, Lock } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage } from 'element-plus'
 import { authApi } from '@/api/auth'
 
 const router = useRouter()
-
 const form = reactive({ userNumber: '', password: '' })
 const formRef = ref<FormInstance>()
 const submitting = ref(false)
@@ -72,6 +70,7 @@ async function onSubmit() {
     localStorage.setItem('token', 'authenticated') // 简化处理，实际项目中应该保存JWT token
     localStorage.setItem('userId', response.userId.toString())
     localStorage.setItem('userNumber', form.userNumber)
+    localStorage.setItem('userName', response.userName)
     
     ElMessage.success(response.message || '登录成功')
     router.replace('/files')
