@@ -53,11 +53,11 @@ public ResponseEntity<?> login(@RequestParam @NotBlank String userNumber,
             .<ResponseEntity<?>>map(u -> {
                 session.setAttribute(SessionKeys.SESSION_USER_ID, u.getId());
                 session.setAttribute(SessionKeys.SESSION_USER_NUMBER, u.getUserNumber());
-                // ✅ 把 userName 带回去
+                // 把 userName 带回去
                 return ResponseEntity.ok(Map.of(
                         "message", "登录成功",
                         "userId", u.getId(),
-                        "userName", u.getUsername()   // <- 新增这一行
+                        "userName", u.getUsername()
                 ));
             })
             .orElseGet(() -> ResponseEntity.status(401)

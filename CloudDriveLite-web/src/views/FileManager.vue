@@ -10,6 +10,8 @@
 
             <Upfilebutton :folderId="folderId" @uploaded="load" />
 
+            <ChunkUploader :folderId="folderId" />
+
             <el-button type="primary" @click="showCreateFolderDialog = true">新建文件夹</el-button>
           </div>
           <div style="flex: 1; margin: 0 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
@@ -17,6 +19,13 @@
           </div>
           <div>
             <el-button @click="load()" :loading="loading">刷新</el-button>
+            <el-button 
+              type="danger" 
+              :disabled="selectedRows.length === 0" 
+              @click="handleBatchDelete"
+            >
+              删除所选<span v-if="selectedRows.length">（{{ selectedRows.length }}）</span>
+            </el-button>
           </div>
         </div>
         <div class="table-title">
@@ -24,7 +33,15 @@
           <span>修改时间</span>
           <span>大小</span>
         </div>
-        <el-table :data="tableData" border stripe style="width: 100%" v-loading="loading">
+        <el-table 
+          ref="tableRef"
+          :data="tableData" 
+          border 
+          stripe 
+          style="width: 100%" 
+          v-loading="loading"
+          @selection-change="onSelectionChange"
+        >
           <el-table-column type="selection" width="48" />
           <el-table-column label="文件名" min-width="250">
             <template #default="{ row }">
@@ -45,12 +62,24 @@
           </el-table-column>
           <el-table-column prop="updatedAt" label="修改时间" width="200" />
           <el-table-column prop="sizeText" label="大小" width="140" />
-          <el-table-column label="操作" width="300">
+          <el-table-column label="操作" width="160">
             <template #default="{ row }">
-              <el-button size="small" @click="handleRename(row)">重命名</el-button>
-              <el-button size="small" type="danger" @click="handleDelete(row)">删除</el-button>
-              <el-button size="small" @click="handleDownload(row)">下载</el-button>
-              <el-button size="small" type="primary" @click="handlePreview(row)" v-if="!row.folder">预览</el-button>
+              <el-dropdown @command="(cmd: string) => handleRowCommand(cmd, row)">
+                <el-button size="small">
+                  操作
+                  <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="rename">重命名</el-dropdown-item>
+                    <el-dropdown-item command="download">下载</el-dropdown-item>
+                    <el-dropdown-item v-if="!row.folder" command="preview">预览</el-dropdown-item>
+                    <el-dropdown-item divided command="delete">
+                      <span style="color: var(--el-color-danger)">删除</span>
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
             </template>
           </el-table-column>
         </el-table>
@@ -95,11 +124,12 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { Cloudy, Folder, Refresh, Setting, Document, Picture, VideoPlay } from '@element-plus/icons-vue'
+import { Cloudy, Folder, Refresh, Setting, Document, Picture, VideoPlay, ArrowDown } from '@element-plus/icons-vue'
 import Back from '@/components/Back.vue'
 import { listFiles, createFolder, renameItem, deleteItem, getBreadcrumb, getRawBoxPreviewUrl, type FileItem as ApiFileItem } from '@/api/files'
 import { ElMessage, ElMessageBox, type FormInstance } from 'element-plus'
 import Upfilebutton from '@/components/Upfilebutton.vue'
+import ChunkUploader from '@/components/ChunkUploader.vue'
 
 type Row = {
   id: number
@@ -116,6 +146,8 @@ const size = ref(20)
 const total = ref(0)
 const folderId = ref<number>(0)
 const pathStack = ref<number[]>([0])
+const selectedRows = ref<Row[]>([])
+const tableRef = ref()
 
 type Crumb = { id: number; name: string }
 const folderChain = ref<Crumb[]>([{ id: 0, name: '根目录' }])
@@ -260,6 +292,50 @@ async function handleDelete(row: Row) {
     load()
   } catch (e: any) {
     if (e !== 'cancel') ElMessage.error(e.message || '删除失败')
+  }
+}
+
+// 多选改变
+function onSelectionChange(rows: Row[]) {
+  selectedRows.value = rows
+}
+
+// 批量删除
+async function handleBatchDelete() {
+  if (selectedRows.value.length === 0) return
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除选中的 ${selectedRows.value.length} 项吗？此操作不可恢复。`,
+      '确认删除',
+      { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' }
+    )
+    await Promise.all(
+      selectedRows.value.map(item => deleteItem(item.id, item.folder))
+    )
+    ElMessage.success('批量删除成功')
+    selectedRows.value = []
+    tableRef.value?.clearSelection?.()
+    load()
+  } catch (e: any) {
+    if (e !== 'cancel') ElMessage.error(e.message || '批量删除失败')
+  }
+}
+
+// 行操作汇总
+function handleRowCommand(cmd: string, row: Row) {
+  switch (cmd) {
+    case 'rename':
+      handleRename(row)
+      break
+    case 'delete':
+      handleDelete(row)
+      break
+    case 'download':
+      handleDownload(row)
+      break
+    case 'preview':
+      handlePreview(row)
+      break
   }
 }
 

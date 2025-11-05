@@ -2,7 +2,9 @@
     <div class="float-nav">
       <div class="left">
         <div class="logo"><img src="@/assets/logo.png"/>CloudDriveLite</div>
-        <Breadcrumb :folder-chain="folderChain" />
+        <el-breadcrumb separator="/">
+          <el-breadcrumb-item v-for="c in folderChain" :key="c.id">{{ c.name }}</el-breadcrumb-item>
+        </el-breadcrumb>
       </div>
   
       <div class="center">
@@ -15,8 +17,7 @@
           @keyup.enter="onSearch"
         />
       </div>
-  
-      <div class="right">
+      
         <el-dropdown trigger="click">
           <span class="user">
             <el-avatar size="small" icon="User" />
@@ -31,7 +32,7 @@
           </template>
         </el-dropdown>
       </div>
-    </div>
+    
   </template>
   
   <script setup lang="ts">
@@ -41,6 +42,8 @@
 
   import { ElMessage } from 'element-plus'
   import { authApi } from '@/api/auth'
+
+  
   
   const router = useRouter()
   const activeIndex = ref(router.currentRoute.value.path)

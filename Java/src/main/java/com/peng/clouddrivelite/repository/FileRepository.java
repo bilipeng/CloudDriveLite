@@ -71,6 +71,15 @@ public interface FileRepository extends JpaRepository<FileObject, Long> {
     @Query("SELECT f FROM FileObject f WHERE f.userId = :userId AND f.id = :folderId AND lower(f.fileType) = 'folder'")
     Optional<FileObject> findFolderByUserIdAndId(@Param("userId") Long userId, @Param("folderId") Long folderId);
 
+    /**
+     * 搜索文件（按文件名模糊匹配，忽略大小写）
+     * @param userId 用户ID
+     * @param keyword 搜索关键词
+     * @param pageable 分页参数
+     * @return 搜索结果分页
+     */
+    Page<FileObject> findByUserIdAndFileNameContainingIgnoreCaseOrderByUploadedTimeDesc(Long userId, String keyword, Pageable pageable);
+
 }
 
 

@@ -36,17 +36,39 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { reactive, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage } from 'element-plus'
 import { authApi } from '@/api/auth'
+import { getCookie, setCookie, deleteCookie } from '@/utils/cookie'
 
 const router = useRouter()
 const form = reactive({ userNumber: '', password: '' })
 const formRef = ref<FormInstance>()
 const submitting = ref(false)
 const remember = ref(false)
+
+// 页面加载时读取记住的账号
+onMounted(() => {
+  const savedUserNumber = getCookie('remembered_userNumber')
+  const savedPassword = getCookie('remembered_password')
+  
+  if (savedUserNumber) {
+    form.userNumber = savedUserNumber
+    remember.value = true
+    
+    // 如果保存了密码（已加密），则解密填充
+    if (savedPassword) {
+      try {
+        // 简单的 Base64 解码（注意：这不是真正的加密，只是编码）
+        form.password = decodeURIComponent(atob(savedPassword))
+      } catch (e) {
+        console.error('密码解密失败:', e)
+      }
+    }
+  }
+})
 
 const rules: FormRules<typeof form> = {
   userNumber: [{ required: true, message: '请输入用户账号', trigger: 'blur' }],
@@ -71,6 +93,17 @@ async function onSubmit() {
     localStorage.setItem('userId', response.userId.toString())
     localStorage.setItem('userNumber', form.userNumber)
     localStorage.setItem('userName', response.userName)
+    
+    // 处理记住密码
+    if (remember.value) {
+      // 保存用户账号和密码到 Cookie（密码使用 Base64 编码）
+      setCookie('remembered_userNumber', form.userNumber, 30) // 30天
+      setCookie('remembered_password', btoa(encodeURIComponent(form.password)), 30)
+    } else {
+      // 取消记住密码，删除 Cookie
+      deleteCookie('remembered_userNumber')
+      deleteCookie('remembered_password')
+    }
     
     ElMessage.success(response.message || '登录成功')
     router.replace('/files')

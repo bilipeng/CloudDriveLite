@@ -13,8 +13,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.io.OutputStream;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -28,6 +32,7 @@ import java.util.UUID;
 public class FileService {
 
     private final FileRepository fileRepository;
+    private static final Logger log = LoggerFactory.getLogger(FileService.class);
 
     @Value("${storage.base-dir:E:/CloudDriveLite/storage}")
     private String baseDir;
@@ -41,6 +46,19 @@ public class FileService {
         if (folderId == null) folderId = 0L;
         // 文件夹置顶，名称升序
         return fileRepository.findByUserIdAndParentIdOrderByFolderFirst(userId, folderId, pageable);
+    }
+
+    /**
+     * 搜索文件（按文件名模糊匹配）
+     * @param userId 用户ID
+     * @param keyword 搜索关键词
+     * @param page 页码
+     * @param size 每页大小
+     * @return 搜索结果分页
+     */
+    public Page<FileObject> search(Long userId, String keyword, int page, int size) {
+        Pageable pageable = PageRequest.of(page, size);
+        return fileRepository.findByUserIdAndFileNameContainingIgnoreCaseOrderByUploadedTimeDesc(userId, keyword, pageable);
     }
 
     public Optional<FileObject> findOwned(Long userId, Long id) {
@@ -332,9 +350,100 @@ public class FileService {
         
         // 复制文件
         Files.copy(Paths.get(fo.getFilePath()), targetPath);
-        
-        System.out.println("文件已复制到 RawBox: " + targetPath);
+        log.info("copied to RawBox: {}", targetPath);
         return rawboxFileName;
+    }
+
+    // -------------- 分片上传支持 --------------
+
+    private Path getChunkDir(Long userId, String identifier) throws IOException {
+        Path dir = Paths.get(baseDir, "chunks", "user_" + userId, identifier);
+        Files.createDirectories(dir);
+        return dir;
+    }
+
+    public boolean chunkExists(Long userId, String identifier, int chunkNumber) {
+        try {
+            Path chunkPath = Paths.get(baseDir, "chunks", "user_" + userId, identifier, String.valueOf(chunkNumber));
+            return Files.exists(chunkPath);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public void saveChunk(Long userId, String identifier, int chunkNumber, MultipartFile file) throws IOException {
+        Path dir = getChunkDir(userId, identifier);
+        Path chunkPath = dir.resolve(String.valueOf(chunkNumber));
+        try (InputStream in = file.getInputStream(); OutputStream out = Files.newOutputStream(chunkPath)) {
+            in.transferTo(out);
+        }
+    }
+
+    @Transactional
+    public Optional<FileObject> tryMergeChunks(Long userId,
+                                               String identifier,
+                                               int totalChunks,
+                                               String originalFilename,
+                                               long totalSize,
+                                               Long folderId) throws IOException {
+        Path dir = Paths.get(baseDir, "chunks", "user_" + userId, identifier);
+        if (!Files.exists(dir)) return Optional.empty();
+
+        // 检查是否所有切片已就绪
+        for (int i = 1; i <= totalChunks; i++) {
+            if (!Files.exists(dir.resolve(String.valueOf(i)))) {
+                return Optional.empty();
+            }
+        }
+
+        // 目标存储路径（与普通上传一致的用户/日期目录）
+        String ext = "";
+        int dot = originalFilename.lastIndexOf('.');
+        if (dot >= 0) ext = originalFilename.substring(dot + 1);
+        String stored = UUID.randomUUID().toString().replace("-", "");
+        if (!ext.isEmpty()) stored = stored + "." + ext;
+
+        LocalDate today = LocalDate.now();
+        Path targetDir = Paths.get(baseDir, "user_" + userId, String.valueOf(today.getYear()),
+                String.format("%02d", today.getMonthValue()), String.format("%02d", today.getDayOfMonth()));
+        Files.createDirectories(targetDir);
+        Path target = targetDir.resolve(stored);
+
+        // 合并写入
+        try (OutputStream out = Files.newOutputStream(target)) {
+            for (int i = 1; i <= totalChunks; i++) {
+                Path chunkPath = dir.resolve(String.valueOf(i));
+                try (InputStream in = Files.newInputStream(chunkPath)) {
+                    in.transferTo(out);
+                }
+            }
+        }
+
+        // 校验总大小（可选）
+        long realSize = Files.size(target);
+        if (totalSize > 0 && realSize != totalSize) {
+            // 出于安全考虑，大小不一致也允许，但记录；实际可抛异常并回滚
+            log.warn("merged size mismatch, real={}, reported={}", realSize, totalSize);
+        }
+
+        // 清理分片目录
+        for (int i = 1; i <= totalChunks; i++) {
+            Files.deleteIfExists(dir.resolve(String.valueOf(i)));
+        }
+        Files.deleteIfExists(dir);
+
+        // 入库
+        String contentType = getContentTypeFromExtension(ext);
+        FileObject fo = new FileObject();
+        fo.setUserId(userId);
+        fo.setFileName(originalFilename);
+        fo.setStoredFileName(stored);
+        fo.setFilePath(target.toString());
+        fo.setParentId(folderId != null ? folderId : 0L);
+        fo.setFileSize(realSize);
+        fo.setFileType(contentType);
+        FileObject saved = fileRepository.save(fo);
+        return Optional.of(saved);
     }
 }
 

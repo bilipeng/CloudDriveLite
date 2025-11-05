@@ -4,11 +4,11 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.Size;
-import lombok.Getter;
+
 
 import java.time.LocalDateTime;
 
-@Getter
+
 @Entity
 @Table(name = "users",
         uniqueConstraints = {
@@ -129,17 +129,44 @@ public class User {
         this.updatedAt = updatedAt;
     }
 
-    // 显式提供必要的 getter，避免 Lombok 注解处理未生效导致的编译问题
     public Long getId() {
         return id;
+    }
+
+    public String getUsername() {
+        return username;
     }
 
     public String getUserNumber() {
         return userNumber;
     }
 
+    public String getPhoneNumber() {
+        return phoneNumber;
+    }
+
     public String getPassword() {
         return password;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public String getFileDir() {
+        return fileDir;
+    }
+
+    public Integer getStatus() {
+        return status;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public LocalDateTime getUpdatedAt() {
+        return updatedAt;
     }
 
     @Override

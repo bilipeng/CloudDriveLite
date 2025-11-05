@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import type { AxiosResponse, AxiosError } from 'axios'
+import router from '@/router'
 
 // 创建axios实例
 const request = axios.create({
@@ -37,7 +38,13 @@ request.interceptors.response.use(
         case 401:
           ElMessage.error('登录已过期，请重新登录')
           localStorage.removeItem('token')
-          window.location.href = '/login'
+          localStorage.removeItem('userId')
+          localStorage.removeItem('userNumber')
+          localStorage.removeItem('userName')
+          // 使用 router 跳转，避免页面刷新
+          if (router.currentRoute.value.path !== '/login') {
+            router.replace('/login')
+          }
           break
         case 403:
           ElMessage.error('没有权限访问')
