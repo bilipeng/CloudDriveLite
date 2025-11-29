@@ -8,7 +8,7 @@ import { RouterView } from 'vue-router'
       <RouterView />
     </div>
   </el-config-provider>
-  
+
 </template>
 
 <style scoped>
