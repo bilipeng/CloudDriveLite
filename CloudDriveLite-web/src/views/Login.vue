@@ -20,7 +20,7 @@
             </el-form-item>
             <div class="form-extras">
               <el-checkbox v-model="remember">记住密码</el-checkbox>
-              <el-link type="info" :underline="false">忘记密码</el-link>
+              <el-link type="info" :underline="false" @click="goToForgotPassword">忘记密码</el-link>
             </div>
             <div class="form-footer">
               <el-link type="primary" @click="goToRegister">没有账号？立即注册</el-link>
@@ -117,6 +117,10 @@ async function onSubmit() {
 
 function goToRegister() {
   router.push('/register')
+}
+
+function goToForgotPassword() {
+  router.push('/forgot-password')
 }
 </script>
 

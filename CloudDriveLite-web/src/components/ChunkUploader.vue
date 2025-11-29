@@ -1,8 +1,21 @@
 <template>
   <div class="chunk-uploader">
-    <el-button type="primary" @click="pickerVisible = true">上传文件</el-button>
+    <el-button 
+      type="primary" 
+      @click="pickerVisible = true"
+      class="chunk-upload-btn"
+    >
+      <el-icon><UploadFilled /></el-icon>
+      <span>大文件上传</span>
+    </el-button>
 
-    <el-dialog v-model="pickerVisible" title="选择文件上传" width="640px">
+    <el-dialog 
+      v-model="pickerVisible" 
+      title="文件上传" 
+      width="720px"
+      class="upload-dialog"
+      :close-on-click-modal="false"
+    >
       <!-- 上传区域（模态框内） -->
       <div 
         class="upload-area"
@@ -12,9 +25,21 @@
         @dragleave="handleDragleave"
       >
         <div class="upload-content">
-          <el-icon size="48" color="#409EFF"><UploadFilled /></el-icon>
-          <p class="upload-text">点击或拖拽文件到此处添加到队列</p>
-          <p class="upload-hint">支持大文件上传和断点续传</p>
+          <div class="upload-icon-wrapper">
+            <el-icon size="64" class="upload-icon"><UploadFilled /></el-icon>
+            <div class="upload-icon-bg"></div>
+          </div>
+          <p class="upload-text">点击或拖拽文件到此处</p>
+          <p class="upload-hint">支持大文件上传、断点续传和批量上传</p>
+          <el-button 
+            type="primary" 
+            size="default" 
+            class="select-file-btn"
+            @click="triggerFileInput"
+          >
+            <el-icon><FolderOpened /></el-icon>
+            选择文件
+          </el-button>
         </div>
         <input
           ref="fileInput"
@@ -97,21 +122,40 @@
 
       <!-- 全局控制（模态框内） -->
       <div v-if="fileList.length > 0" class="global-controls">
-        <el-button @click="pauseAll" :disabled="!hasUploadingFiles">
-          全部暂停
-        </el-button>
-        <el-button @click="resumeAll" :disabled="!hasPausedFiles">
-          全部继续
-        </el-button>
-        <el-button @click="clearAll" type="danger">
-          清空列表
-        </el-button>
+        <div class="controls-left">
+          <el-button @click="pauseAll" :disabled="!hasUploadingFiles" size="small">
+            全部暂停
+          </el-button>
+          <el-button @click="resumeAll" :disabled="!hasPausedFiles" size="small">
+            全部继续
+          </el-button>
+          <el-button @click="clearAll" type="danger" size="small">
+            清空列表
+          </el-button>
+        </div>
+        <div class="controls-right">
+          <span class="upload-summary">
+            共 {{ fileList.length }} 个文件
+            <template v-if="hasUploadingFiles || hasPausedFiles">
+              · {{ fileList.filter(f => f.status === 'uploading' || f.status === 'paused').length }} 个上传中
+            </template>
+            <template v-if="fileList.filter(f => f.status === 'success').length > 0">
+              · {{ fileList.filter(f => f.status === 'success').length }} 个已完成
+            </template>
+          </span>
+        </div>
       </div>
 
       <template #footer>
         <span class="dialog-footer">
-          <el-button @click="pickerVisible = false">关闭</el-button>
-          <el-button type="primary" :disabled="!hasPendingFiles" @click="startUpload">开始上传</el-button>
+          <el-button @click="handleCloseDialog">关闭</el-button>
+          <el-button 
+            v-if="hasPendingFiles" 
+            type="primary" 
+            @click="startUpload"
+          >
+            开始上传 ({{ fileList.filter(f => f.status === 'pending').length }})
+          </el-button>
         </span>
       </template>
     </el-dialog>
@@ -119,9 +163,9 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { UploadFilled } from '@element-plus/icons-vue'
+import { UploadFilled, FolderOpened } from '@element-plus/icons-vue'
 import Uploader from 'simple-uploader.js'
 
 export default {
@@ -171,15 +215,28 @@ export default {
 
     // 初始化上传器
     const initUploader = () => {
+      // 如果已存在上传器，先清理
+      if (uploader.value) {
+        try {
+          uploader.value.cancel()
+          // simple-uploader.js 可能没有 destroy 方法，使用 cancel 和移除事件监听
+          if (typeof uploader.value.off === 'function') {
+            uploader.value.off()
+          }
+        } catch (e) {
+          console.warn('清理上传器时出错:', e)
+        }
+      }
+      
       uploader.value = new Uploader({
         target: '/api/files/upload',
         chunkSize: props.chunkSize,
         simultaneousUploads: props.simultaneousUploads,
         testChunks: true,
         fileParameterName: 'file',
-        query: {
-          folderId: props.folderId
-        },
+        query: () => ({
+          folderId: props.folderId || 0
+        }),
         headers: {
           'X-Requested-With': 'XMLHttpRequest'
         },
@@ -325,6 +382,10 @@ export default {
       if (input.files && input.files.length > 0) {
         uploader.value?.addFiles(input.files)
         input.value = '' // 重置input
+        // 自动开始上传新添加的文件
+        setTimeout(() => {
+          startUpload()
+        }, 100)
       }
     }
 
@@ -334,6 +395,10 @@ export default {
       
       if (event.dataTransfer?.files && event.dataTransfer.files.length > 0) {
         uploader.value?.addFiles(event.dataTransfer.files)
+        // 自动开始上传拖拽的文件
+        setTimeout(() => {
+          startUpload()
+        }, 100)
       }
     }
 
@@ -454,6 +519,27 @@ export default {
       }
     }
 
+    // 关闭对话框时的处理
+    const handleCloseDialog = () => {
+      // 如果有正在上传的文件，提示用户
+      const uploadingFiles = fileList.value.filter(f => f.status === 'uploading' || f.status === 'paused')
+      if (uploadingFiles.length > 0) {
+        ElMessageBox.confirm(
+          `还有 ${uploadingFiles.length} 个文件正在上传中，关闭对话框后上传将继续在后台进行。确定要关闭吗？`,
+          '提示',
+          {
+            confirmButtonText: '确定',
+            cancelButtonText: '取消',
+            type: 'info'
+          }
+        ).then(() => {
+          pickerVisible.value = false
+        }).catch(() => {})
+      } else {
+        pickerVisible.value = false
+      }
+    }
+
     // 工具函数
     const formatFileSize = (bytes) => {
       if (bytes === 0) return '0 B'
@@ -485,6 +571,16 @@ export default {
       return statusMap[status]
     }
 
+    // 监听 folderId 变化
+    watch(() => props.folderId, (newFolderId, oldFolderId) => {
+      if (newFolderId !== oldFolderId && uploader.value) {
+        console.log('folderId 已更新:', oldFolderId, '->', newFolderId)
+        // query 已经是函数形式，会自动获取最新的 folderId
+        // 但如果上传器已经初始化，我们需要确保它使用新的 folderId
+        // simple-uploader.js 的 query 函数会在每次请求时调用，所以这里不需要额外操作
+      }
+    })
+
     // 生命周期
     onMounted(() => {
       initUploader()
@@ -492,7 +588,20 @@ export default {
 
     onUnmounted(() => {
       if (uploader.value) {
-        uploader.value.cancel()
+        try {
+          // 取消所有上传
+          uploader.value.cancel()
+          // 移除所有事件监听
+          if (typeof uploader.value.off === 'function') {
+            uploader.value.off()
+          }
+          // 清空文件列表
+          fileList.value = []
+        } catch (e) {
+          console.warn('组件卸载时清理上传器出错:', e)
+        } finally {
+          uploader.value = null
+        }
       }
     })
 
@@ -510,6 +619,7 @@ export default {
       handleDragover,
       handleDragleave,
       startUpload,
+      handleCloseDialog,
       pauseFile,
       resumeFile,
       removeFile,
@@ -530,39 +640,153 @@ export default {
   width: 100%;
 }
 
+.chunk-upload-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-radius: 10px;
+  font-weight: 500;
+  font-size: 14px;
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+  border: none;
+  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.3);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.chunk-upload-btn:hover {
+  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4);
+}
+
+.chunk-upload-btn:active {
+  transform: translateY(0);
+}
+
+.upload-dialog :deep(.el-dialog) {
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+}
+
+.upload-dialog :deep(.el-dialog__header) {
+  padding: 24px 24px 16px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.upload-dialog :deep(.el-dialog__title) {
+  font-size: 20px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
 .upload-area {
-  border: 2px dashed #dcdfe6;
-  border-radius: 8px;
-  padding: 40px;
+  border: 2px dashed #cbd5e1;
+  border-radius: 16px;
+  padding: 60px 40px;
   text-align: center;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  background-color: #fafafa;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
   position: relative;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.upload-area::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.05) 0%, transparent 70%);
+  animation: pulse 4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1) rotate(0deg); opacity: 0.5; }
+  50% { transform: scale(1.1) rotate(180deg); opacity: 0.8; }
 }
 
 .upload-area:hover {
-  border-color: #409eff;
+  border-color: #3b82f6;
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.15);
 }
 
 .upload-area.is-dragover {
-  border-color: #409eff;
-  background-color: #ecf5ff;
+  border-color: #3b82f6;
+  background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+  border-width: 3px;
+  box-shadow: 0 12px 32px rgba(59, 130, 246, 0.25);
+  transform: scale(1.02);
 }
 
 .upload-content {
   pointer-events: none;
+  position: relative;
+  z-index: 1;
+}
+
+.upload-icon-wrapper {
+  position: relative;
+  display: inline-block;
+  margin-bottom: 24px;
+}
+
+.upload-icon {
+  position: relative;
+  z-index: 2;
+  color: #3b82f6;
+  filter: drop-shadow(0 4px 12px rgba(59, 130, 246, 0.3));
+}
+
+.upload-icon-bg {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 80px;
+  height: 80px;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
+  border-radius: 50%;
+  animation: ripple 2s ease-in-out infinite;
+}
+
+@keyframes ripple {
+  0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.6; }
+  50% { transform: translate(-50%, -50%) scale(1.2); opacity: 0.3; }
 }
 
 .upload-text {
-  font-size: 16px;
-  color: #606266;
-  margin: 16px 0 8px;
+  margin: 24px 0 8px;
+  font-size: 18px;
+  font-weight: 600;
+  color: #1e293b;
 }
 
 .upload-hint {
   font-size: 14px;
-  color: #909399;
+  color: #64748b;
+  margin-bottom: 24px;
+}
+
+.select-file-btn {
+  pointer-events: auto;
+  margin-top: 8px;
+  border-radius: 10px;
+  padding: 10px 24px;
+  font-weight: 500;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  border: none;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+  transition: all 0.3s ease;
+}
+
+.select-file-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
 }
 
 .file-input {
@@ -580,26 +804,31 @@ export default {
 }
 
 .file-item {
-  border: 1px solid #e4e7ed;
-  border-radius: 6px;
-  padding: 16px;
-  margin-bottom: 12px;
-  background: #fff;
-  transition: all 0.3s ease;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 16px;
+  background: #ffffff;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
 .file-item:hover {
-  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
+  border-color: #cbd5e1;
 }
 
 .file-item.file-success {
-  border-color: #67c23a;
-  background-color: #f0f9eb;
+  border-color: #10b981;
+  background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+  box-shadow: 0 4px 16px rgba(16, 185, 129, 0.15);
 }
 
 .file-item.file-error {
-  border-color: #f56c6c;
-  background-color: #fef0f0;
+  border-color: #ef4444;
+  background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+  box-shadow: 0 4px 16px rgba(239, 68, 68, 0.15);
 }
 
 .file-info {
@@ -676,10 +905,26 @@ export default {
 
 .global-controls {
   display: flex;
-  gap: 12px;
-  justify-content: center;
-  margin-top: 20px;
-  padding-top: 20px;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 16px;
+  padding-top: 16px;
   border-top: 1px solid #e4e7ed;
+  gap: 16px;
+}
+
+.controls-left {
+  display: flex;
+  gap: 8px;
+}
+
+.controls-right {
+  flex: 1;
+  text-align: right;
+}
+
+.upload-summary {
+  color: #606266;
+  font-size: 14px;
 }
 </style>

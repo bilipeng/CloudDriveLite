@@ -26,6 +26,18 @@ export interface RegisterResponse {
   userNumber: string
 }
 
+// 找回密码接口
+export interface ForgotPasswordParams {
+  userNumber: string
+  phoneNumber?: string
+  email?: string
+  newPassword: string
+}
+
+export interface ForgotPasswordResponse {
+  message: string
+}
+
 
 
 
@@ -60,5 +72,24 @@ export const authApi = {
   // 用户登出
   logout: (): Promise<{ message: string }> => {
     return request.post('/api/auth/logout')
+  },
+
+  // 找回密码
+  forgotPassword: (params: ForgotPasswordParams): Promise<ForgotPasswordResponse> => {
+    const requestParams: any = {
+      userNumber: params.userNumber,
+      newPassword: params.newPassword
+    }
+    
+    if (params.phoneNumber) {
+      requestParams.phoneNumber = params.phoneNumber
+    }
+    if (params.email) {
+      requestParams.email = params.email
+    }
+    
+    return request.post('/api/auth/forgot-password', null, {
+      params: requestParams
+    })
   }
 }

@@ -34,14 +34,16 @@ request.interceptors.response.use(
     // 处理HTTP错误
     if (error.response) {
       const { status, data } = error.response
+      const message = (data as any)?.message || ''
       switch (status) {
         case 401:
-          ElMessage.error('登录已过期，请重新登录')
+          // 清除本地存储
           localStorage.removeItem('token')
           localStorage.removeItem('userId')
           localStorage.removeItem('userNumber')
           localStorage.removeItem('userName')
-          // 使用 router 跳转，避免页面刷新
+          // 显示提示并跳转
+          ElMessage.warning(message || '登录已过期，请重新登录')
           if (router.currentRoute.value.path !== '/login') {
             router.replace('/login')
           }
@@ -56,7 +58,24 @@ request.interceptors.response.use(
           ElMessage.error('服务器内部错误')
           break
         default:
-          ElMessage.error((data as any)?.message || '请求失败')
+          // 检查响应消息是否表示未登录
+          const errorMessage = (data as any)?.message || '请求失败'
+          if (errorMessage.includes('未登录') || 
+              errorMessage.includes('登录已过期') || 
+              errorMessage.includes('请先登录') ||
+              errorMessage.includes('未授权')) {
+            // 清除本地存储
+            localStorage.removeItem('token')
+            localStorage.removeItem('userId')
+            localStorage.removeItem('userNumber')
+            localStorage.removeItem('userName')
+            ElMessage.warning(errorMessage)
+            if (router.currentRoute.value.path !== '/login') {
+              router.replace('/login')
+            }
+          } else {
+            ElMessage.error(errorMessage)
+          }
       }
     } else if (error.request) {
       ElMessage.error('网络连接失败，请检查网络')

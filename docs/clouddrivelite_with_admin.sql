@@ -106,3 +106,4 @@ INSERT INTO `system_config` (`config_key`, `config_value`, `config_type`, `descr
 
 SET FOREIGN_KEY_CHECKS = 1;
 
+

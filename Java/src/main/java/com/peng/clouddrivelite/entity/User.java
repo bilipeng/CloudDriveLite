@@ -53,6 +53,12 @@ public class User {
     @Column(name = "status", nullable = false)
     private Integer status = 1; // 1-正常, 0-禁用
 
+    @Column(name = "role", nullable = false, length = 20)
+    private String role = "USER"; // USER-普通用户, ADMIN-管理员
+
+    @Column(name = "max_storage", nullable = false)
+    private Long maxStorage = 10737418240L; // 默认10GB (字节)
+
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
@@ -129,6 +135,22 @@ public class User {
         this.updatedAt = updatedAt;
     }
 
+    public String getRole() {
+        return role;
+    }
+
+    public void setRole(String role) {
+        this.role = role;
+    }
+
+    public Long getMaxStorage() {
+        return maxStorage;
+    }
+
+    public void setMaxStorage(Long maxStorage) {
+        this.maxStorage = maxStorage;
+    }
+
     public Long getId() {
         return id;
     }
@@ -180,6 +202,8 @@ public class User {
                 ", email='" + email + '\'' +
                 ", fileDir='" + fileDir + '\'' +
                 ", status=" + status +
+                ", role='" + role + '\'' +
+                ", maxStorage=" + maxStorage +
                 ", createdAt=" + createdAt +
                 ", updatedAt=" + updatedAt +
                 '}';

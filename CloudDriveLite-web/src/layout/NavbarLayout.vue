@@ -1,7 +1,7 @@
 <template>
     <FloatNav :folder-chain="fileSystemStore.folderChain.value" />
     <main style="margin-top: 64px">
-      <router-view />
+      <router-view :key="$route.fullPath" />
     </main>
   </template>
   

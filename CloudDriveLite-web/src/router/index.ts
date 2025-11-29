@@ -8,6 +8,7 @@ const router = createRouter({
     { path: '/', redirect: '/index' },
     { path: '/login', name: 'login', component: () => import('../views/Login.vue') },
     { path: '/register', name: 'register', component: () => import('../views/Register.vue') },
+    { path: '/forgot-password', name: 'forgot-password', component: () => import('../views/ForgotPassword.vue') },
 
     {
       path: '/',
@@ -22,10 +23,46 @@ const router = createRouter({
           path: '/files',
           name: 'files',
           component: FileManager,
+        },
+        {
+          path: '/profile',
+          name: 'profile',
+          component: () => import('../views/Profile.vue')
         }
       ]
     },
 
+    // 管理员路由
+    {
+      path: '/admin',
+      component: () => import('../layout/AdminLayout.vue'),
+      children: [
+        {
+          path: '',
+          redirect: '/admin/dashboard'
+        },
+        {
+          path: 'dashboard',
+          name: 'admin-dashboard',
+          component: () => import('../views/admin/Dashboard.vue')
+        },
+        {
+          path: 'users',
+          name: 'admin-users',
+          component: () => import('../views/admin/UserManagement.vue')
+        },
+        {
+          path: 'storage',
+          name: 'admin-storage',
+          component: () => import('../views/admin/StorageManagement.vue')
+        },
+        {
+          path: 'logs',
+          name: 'admin-logs',
+          component: () => import('../views/admin/LoginLogs.vue')
+        }
+      ]
+    },
     
     // 其他页面可按需添加
   ],
@@ -36,8 +73,15 @@ const router = createRouter({
 router.beforeEach((to, _from, next) => {
   const token = localStorage.getItem('token')
   const isAuthed = Boolean(token)
-  const publicPaths = ['/login', '/register']
+  const publicPaths = ['/login', '/register', '/forgot-password']
   const isPublic = publicPaths.includes(to.path)
+  const isAdminPath = to.path.startsWith('/admin')
+
+  // 如果访问管理员路径但未登录，重定向到登录页
+  if (isAdminPath && !isAuthed) {
+    next('/login')
+    return
+  }
 
   if (!isAuthed && !isPublic) {
     next('/login')

@@ -1,7 +1,9 @@
 package com.peng.clouddrivelite.service;
 
 import com.peng.clouddrivelite.entity.FileObject;
+import com.peng.clouddrivelite.entity.User;
 import com.peng.clouddrivelite.repository.FileRepository;
+import com.peng.clouddrivelite.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
@@ -32,13 +34,15 @@ import java.util.UUID;
 public class FileService {
 
     private final FileRepository fileRepository;
+    private final UserRepository userRepository;
     private static final Logger log = LoggerFactory.getLogger(FileService.class);
 
     @Value("${storage.base-dir:E:/CloudDriveLite/storage}")
     private String baseDir;
 
-    public FileService(FileRepository fileRepository) {
+    public FileService(FileRepository fileRepository, UserRepository userRepository) {
         this.fileRepository = fileRepository;
+        this.userRepository = userRepository;
     }
 
     public Page<FileObject> list(Long userId, Long folderId, int page, int size) {
@@ -65,11 +69,36 @@ public class FileService {
         return fileRepository.findByIdAndUserId(id, userId);
     }
 
+    /**
+     * 计算用户已用存储空间
+     */
+    public long calculateUserStorage(Long userId) {
+        return fileRepository.findAll().stream()
+                .filter(f -> f.getUserId().equals(userId) && !f.getIsFolder())
+                .mapToLong(FileObject::getFileSize)
+                .sum();
+    }
+
     @Transactional
     public FileObject upload(Long userId, MultipartFile file, Long folderId) throws IOException {
+        // 0. 检查存储空间限制
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("用户不存在"));
+        long usedStorage = calculateUserStorage(userId);
+        long fileSize = file.getSize();
+        if (usedStorage + fileSize > user.getMaxStorage()) {
+            long remaining = user.getMaxStorage() - usedStorage;
+            throw new RuntimeException(String.format(
+                    "存储空间不足！已用：%.2f GB，限制：%.2f GB，剩余：%.2f GB，文件大小：%.2f GB",
+                    usedStorage / 1024.0 / 1024.0 / 1024.0,
+                    user.getMaxStorage() / 1024.0 / 1024.0 / 1024.0,
+                    remaining / 1024.0 / 1024.0 / 1024.0,
+                    fileSize / 1024.0 / 1024.0 / 1024.0
+            ));
+        }
+
         // 1. 自动检测文件信息
         String originalFilename = StringUtils.cleanPath(file.getOriginalFilename());
-        Long fileSize = file.getSize(); // 自动获取文件大小
         
         // 2. 生成存储文件名
         String ext = "";
@@ -106,7 +135,18 @@ public class FileService {
         fo.setFileType(contentType); // 自动检测的文件类型
         // uploadedTime 会在 @PrePersist 中自动设置
         
-        return fileRepository.save(fo);
+        FileObject saved = fileRepository.save(fo);
+        
+        // 再次检查存储空间（防止并发问题）
+        long newUsedStorage = calculateUserStorage(userId);
+        if (newUsedStorage > user.getMaxStorage()) {
+            // 回滚：删除已保存的文件记录和物理文件
+            fileRepository.deleteById(saved.getId());
+            Files.deleteIfExists(Paths.get(saved.getFilePath()));
+            throw new RuntimeException("存储空间检查失败，上传已取消");
+        }
+        
+        return saved;
     }
 
     /**
@@ -396,6 +436,21 @@ public class FileService {
             }
         }
 
+        // 检查存储空间限制
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("用户不存在"));
+        long usedStorage = calculateUserStorage(userId);
+        if (usedStorage + totalSize > user.getMaxStorage()) {
+            long remaining = user.getMaxStorage() - usedStorage;
+            throw new RuntimeException(String.format(
+                    "存储空间不足！已用：%.2f GB，限制：%.2f GB，剩余：%.2f GB，文件大小：%.2f GB",
+                    usedStorage / 1024.0 / 1024.0 / 1024.0,
+                    user.getMaxStorage() / 1024.0 / 1024.0 / 1024.0,
+                    remaining / 1024.0 / 1024.0 / 1024.0,
+                    totalSize / 1024.0 / 1024.0 / 1024.0
+            ));
+        }
+
         // 目标存储路径（与普通上传一致的用户/日期目录）
         String ext = "";
         int dot = originalFilename.lastIndexOf('.');
@@ -443,6 +498,16 @@ public class FileService {
         fo.setFileSize(realSize);
         fo.setFileType(contentType);
         FileObject saved = fileRepository.save(fo);
+        
+        // 再次检查存储空间（防止并发问题）
+        long newUsedStorage = calculateUserStorage(userId);
+        if (newUsedStorage > user.getMaxStorage()) {
+            // 回滚：删除已保存的文件记录和物理文件
+            fileRepository.deleteById(saved.getId());
+            Files.deleteIfExists(Paths.get(saved.getFilePath()));
+            throw new RuntimeException("存储空间检查失败，上传已取消");
+        }
+        
         return Optional.of(saved);
     }
 }
