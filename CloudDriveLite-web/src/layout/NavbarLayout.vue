@@ -1,5 +1,5 @@
 <template>
-    <FloatNav :folder-chain="fileSystemStore.folderChain.value" />
+    <FloatNav :folder-chain="fileSystemStore.folderChain" />
     <main style="margin-top: 64px">
       <router-view :key="$route.fullPath" />
     </main>

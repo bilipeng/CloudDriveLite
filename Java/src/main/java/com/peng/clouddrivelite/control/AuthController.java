@@ -72,14 +72,14 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<?> login(@RequestParam @NotBlank String userNumber,
-                                   @RequestParam @NotBlank String password,
+public ResponseEntity<?> login(@RequestParam @NotBlank String userNumber,
+                               @RequestParam @NotBlank String password,
                                    HttpSession session,
                                    HttpServletRequest request) {
         String ipAddress = getClientIp(request);
         String userAgent = request.getHeader("User-Agent");
         
-        return userService.findByUserNumber(userNumber)
+    return userService.findByUserNumber(userNumber)
                 .filter(u -> {
                     boolean success = userService.verifyPassword(u, password);
                     // 记录登录日志
@@ -106,16 +106,16 @@ public class AuthController {
                     }
                     return success;
                 })
-                .<ResponseEntity<?>>map(u -> {
-                    session.setAttribute(SessionKeys.SESSION_USER_ID, u.getId());
-                    session.setAttribute(SessionKeys.SESSION_USER_NUMBER, u.getUserNumber());
-                    // 把 userName 带回去
-                    return ResponseEntity.ok(Map.of(
-                            "message", "登录成功",
-                            "userId", u.getId(),
-                            "userName", u.getUsername()
-                    ));
-                })
+            .<ResponseEntity<?>>map(u -> {
+                session.setAttribute(SessionKeys.SESSION_USER_ID, u.getId());
+                session.setAttribute(SessionKeys.SESSION_USER_NUMBER, u.getUserNumber());
+                // 把 userName 带回去
+                return ResponseEntity.ok(Map.of(
+                        "message", "登录成功",
+                        "userId", u.getId(),
+                        "userName", u.getUsername()
+                ));
+            })
                 .orElseGet(() -> {
                     // 用户不存在的情况也记录日志
                     loginLogService.recordLogin(
@@ -130,7 +130,7 @@ public class AuthController {
                     return ResponseEntity.status(401)
                             .body(Map.of("message", "账号或密码错误"));
                 });
-    }
+}
 
     @PostMapping("/logout")
     public ResponseEntity<?> logout(HttpSession session) {

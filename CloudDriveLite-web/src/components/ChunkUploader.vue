@@ -124,14 +124,14 @@
       <div v-if="fileList.length > 0" class="global-controls">
         <div class="controls-left">
           <el-button @click="pauseAll" :disabled="!hasUploadingFiles" size="small">
-            全部暂停
-          </el-button>
+          全部暂停
+        </el-button>
           <el-button @click="resumeAll" :disabled="!hasPausedFiles" size="small">
-            全部继续
-          </el-button>
+          全部继续
+        </el-button>
           <el-button @click="clearAll" type="danger" size="small">
-            清空列表
-          </el-button>
+          清空列表
+        </el-button>
         </div>
         <div class="controls-right">
           <span class="upload-summary">
@@ -590,7 +590,7 @@ export default {
       if (uploader.value) {
         try {
           // 取消所有上传
-          uploader.value.cancel()
+        uploader.value.cancel()
           // 移除所有事件监听
           if (typeof uploader.value.off === 'function') {
             uploader.value.off()
