@@ -106,7 +106,7 @@ public ResponseEntity<?> login(@RequestParam @NotBlank String userNumber,
                     }
                     return success;
                 })
-            .<ResponseEntity<?>>map(u -> {
+                .<ResponseEntity<?>>map(u -> {
                 session.setAttribute(SessionKeys.SESSION_USER_ID, u.getId());
                 session.setAttribute(SessionKeys.SESSION_USER_NUMBER, u.getUserNumber());
                 // 把 userName 带回去
