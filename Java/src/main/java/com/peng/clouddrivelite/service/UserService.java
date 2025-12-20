@@ -9,6 +9,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -154,6 +155,132 @@ public class UserService {
         return userRepository.findById(userId)
                 .map(user -> "ADMIN".equals(user.getRole()))
                 .orElse(false);
+    }
+
+    /**
+     * 构建当前用户信息 Map（用于前端展示）
+     */
+    public Map<String, Object> buildUserInfo(User user) {
+        Map<String, Object> userInfo = new HashMap<>();
+        userInfo.put("id", user.getId());
+        userInfo.put("username", user.getUsername());
+        userInfo.put("userNumber", user.getUserNumber());
+        userInfo.put("phoneNumber", user.getPhoneNumber() != null ? user.getPhoneNumber() : "");
+        userInfo.put("email", user.getEmail() != null ? user.getEmail() : "");
+        userInfo.put("role", user.getRole());
+        userInfo.put("status", user.getStatus());
+        // 格式化日期时间
+        if (user.getCreatedAt() != null) {
+            userInfo.put("createdAt", user.getCreatedAt()
+                    .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+        } else {
+            userInfo.put("createdAt", "");
+        }
+        return userInfo;
+    }
+
+    /**
+     * 更新当前用户的基础信息（用户名、手机号、邮箱）
+     */
+    @Transactional
+    public Map<String, Object> updateUserProfile(Long userId,
+                                                 String username,
+                                                 String phoneNumber,
+                                                 String email) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("用户不存在"));
+
+        // 更新用户名
+        if (username != null && !username.trim().isEmpty()) {
+            if (userRepository.existsByUsername(username) && !username.equals(user.getUsername())) {
+                throw new RuntimeException("用户名已存在");
+            }
+            user.setUsername(username);
+        }
+
+        // 更新手机号
+        if (phoneNumber != null && !phoneNumber.trim().isEmpty()) {
+            if (userRepository.existsByPhoneNumber(phoneNumber)
+                    && !phoneNumber.equals(user.getPhoneNumber())) {
+                throw new RuntimeException("手机号已存在");
+            }
+            if (!phoneNumber.matches("^1[3-9]\\d{9}$")) {
+                throw new RuntimeException("手机号格式不正确");
+            }
+            user.setPhoneNumber(phoneNumber);
+        }
+
+        // 更新邮箱
+        if (email != null) {
+            if (!email.trim().isEmpty()
+                    && userRepository.existsByEmail(email)
+                    && !email.equals(user.getEmail())) {
+                throw new RuntimeException("邮箱已存在");
+            }
+            user.setEmail(email.trim().isEmpty() ? null : email);
+        }
+
+        userRepository.save(user);
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("username", user.getUsername());
+        result.put("phoneNumber", user.getPhoneNumber());
+        result.put("email", user.getEmail());
+        return result;
+    }
+
+    /**
+     * 修改密码
+     */
+    @Transactional
+    public void changePassword(Long userId,
+                               String oldPassword,
+                               String newPassword) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("用户不存在"));
+
+        // 验证旧密码
+        if (!verifyPassword(user, oldPassword)) {
+            throw new RuntimeException("当前密码错误");
+        }
+
+        // 验证新密码长度
+        if (newPassword == null || newPassword.length() < 6) {
+            throw new RuntimeException("新密码长度至少6位");
+        }
+
+        // 更新密码
+        user.setPassword(PasswordUtil.hash(newPassword));
+        userRepository.save(user);
+    }
+
+    /**
+     * 找回密码：通过用户号 + 手机号/邮箱验证后重置密码
+     */
+    @Transactional
+    public void resetPassword(String userNumber,
+                              String phoneNumber,
+                              String email,
+                              String newPassword) {
+        if ((phoneNumber == null || phoneNumber.isBlank()) &&
+            (email == null || email.isBlank())) {
+            throw new RuntimeException("请提供手机号或邮箱");
+        }
+        if (newPassword == null || newPassword.length() < 6) {
+            throw new RuntimeException("密码长度至少6位");
+        }
+
+        Optional<User> userOpt;
+        if (phoneNumber != null && !phoneNumber.isBlank()) {
+            userOpt = findByUserNumberAndPhoneNumber(userNumber, phoneNumber);
+        } else {
+            userOpt = findByUserNumberAndEmail(userNumber, email);
+        }
+
+        User user = userOpt.orElseThrow(() -> new RuntimeException("用户不存在或信息不匹配"));
+
+        user.setPassword(PasswordUtil.hash(newPassword));
+        userRepository.save(user);
     }
 }
 

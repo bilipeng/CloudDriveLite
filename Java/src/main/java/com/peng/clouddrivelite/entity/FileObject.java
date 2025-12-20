@@ -9,6 +9,28 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name = "file_object")
 public class FileObject {
+    /**
+     * 文件/文件夹元数据实体。
+     * <p>
+     * 本项目的“文件系统”是用一张表来表达层级结构：
+     * - 每条记录要么是一个文件（isFolder=false），要么是一个文件夹（isFolder=true）
+     * - parentId 指向父文件夹，0 表示根目录
+     * - 文件的真实内容存放在磁盘，表里只保存路径与展示信息
+     * </p>
+     *
+     * <p>
+     * 对于文件：
+     * - fileName: 原始文件名（展示用）
+     * - storedFileName: 服务器落盘使用的文件名（通常是 uuid.ext，避免冲突）
+     * - filePath: 磁盘路径（当前实现常为绝对路径字符串）
+     * - fileType: MIME 类型（用于下载/预览 Content-Type）
+     * </p>
+     *
+     * <p>
+     * 对于文件夹：
+     * - 不对应磁盘文件，所以 storedFileName/filePath/fileSize/fileType 在 onCreate 中会被规范化
+     * </p>
+     */
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id; // 文件的唯一id
@@ -73,6 +95,8 @@ public class FileObject {
 
     @PrePersist
     protected void onCreate() {
+        // 生命周期回调：在第一次入库前自动补齐时间字段。
+        // 文件上传场景通常不显式 setUploadedTime，因此这里兜底设置为 now。
         if (uploadedTime == null) {
             uploadedTime = LocalDateTime.now();
         }

@@ -7,14 +7,9 @@ import com.peng.clouddrivelite.service.AdminService;
 import com.peng.clouddrivelite.service.FileService;
 import com.peng.clouddrivelite.service.LoginLogService;
 import com.peng.clouddrivelite.service.UserService;
-import com.peng.clouddrivelite.util.SessionKeys;
-import jakarta.servlet.http.Cookie;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.data.domain.Page;
 import org.springframework.format.annotation.DateTimeFormat;
-import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
@@ -34,33 +29,12 @@ public class AdminController {
     private final LoginLogService loginLogService;
     private final FileService fileService;
 
-    public AdminController(UserService userService, AdminService adminService, 
-                          LoginLogService loginLogService, FileService fileService) {
+    public AdminController(UserService userService, AdminService adminService,
+                           LoginLogService loginLogService, FileService fileService) {
         this.userService = userService;
         this.adminService = adminService;
         this.loginLogService = loginLogService;
         this.fileService = fileService;
-    }
-
-    /**
-     * 检查当前用户是否为管理员
-     */
-    private void requireAdmin(HttpSession session) {
-        // 首先检查管理员 Session 是否已激活
-        Object adminActivated = session.getAttribute(SessionKeys.SESSION_ADMIN_ACTIVATED);
-        if (adminActivated == null || !Boolean.TRUE.equals(adminActivated)) {
-            throw new RuntimeException("管理员 Session 未激活，请先激活管理员 Session");
-        }
-        
-        // 验证用户 ID 和权限
-        Object userIdObj = session.getAttribute(SessionKeys.SESSION_USER_ID);
-        if (userIdObj == null) {
-            throw new RuntimeException("未登录");
-        }
-        Long userId = Long.valueOf(userIdObj.toString());
-        if (!userService.isAdmin(userId)) {
-            throw new RuntimeException("需要管理员权限");
-        }
     }
 
     /**
@@ -70,21 +44,14 @@ public class AdminController {
     @PostMapping("/activate")
     public ApiResponse<Map<String, Object>> activateAdminSession(HttpSession session) {
         try {
-            // 从客户端 Session 获取用户 ID
-            Object userIdObj = session.getAttribute(SessionKeys.SESSION_USER_ID);
-            if (userIdObj == null) {
-                return ApiResponse.error("未登录");
-            }
-            
-            Long userId = Long.valueOf(userIdObj.toString());
-            
-            // 验证用户是否为管理员
+            Long userId = adminService.requireUserId(session);
+
             if (!userService.isAdmin(userId)) {
                 return ApiResponse.error("您不是管理员，无法激活管理员 Session");
             }
-            
+
             // 激活管理员 Session
-            session.setAttribute(SessionKeys.SESSION_ADMIN_ACTIVATED, true);
+            session.setAttribute(com.peng.clouddrivelite.util.SessionKeys.SESSION_ADMIN_ACTIVATED, true);
             
             Map<String, Object> result = new HashMap<>();
             result.put("activated", true);
@@ -110,7 +77,7 @@ public class AdminController {
             @RequestParam(defaultValue = "20") int size,
             HttpSession session) {
         try {
-            requireAdmin(session);
+            adminService.requireAdmin(session);
             Page<User> users = userService.listUsers(keyword, status, role, page - 1, size);
             
             // 为每个用户计算存储使用情况
@@ -154,7 +121,7 @@ public class AdminController {
             @RequestParam Long maxStorage,
             HttpSession session) {
         try {
-            requireAdmin(session);
+            adminService.requireAdmin(session);
             
             long usedStorage = fileService.calculateUserStorage(id);
             if (maxStorage < usedStorage) {
@@ -184,7 +151,7 @@ public class AdminController {
             @RequestParam Integer status,
             HttpSession session) {
         try {
-            requireAdmin(session);
+            adminService.requireAdmin(session);
             userService.updateUserStatus(id, status);
             
             Map<String, Object> result = new HashMap<>();
@@ -206,7 +173,7 @@ public class AdminController {
             @RequestParam String role,
             HttpSession session) {
         try {
-            requireAdmin(session);
+            adminService.requireAdmin(session);
             userService.updateUserRole(id, role);
             
             Map<String, Object> result = new HashMap<>();
@@ -227,7 +194,7 @@ public class AdminController {
     @GetMapping("/system/overview")
     public ApiResponse<Map<String, Object>> getSystemOverview(HttpSession session) {
         try {
-            requireAdmin(session);
+            adminService.requireAdmin(session);
             Map<String, Object> overview = adminService.getSystemOverview();
             return ApiResponse.success("获取系统概览成功", overview);
         } catch (Exception e) {
@@ -243,7 +210,7 @@ public class AdminController {
             @RequestParam(defaultValue = "10") int limit,
             HttpSession session) {
         try {
-            requireAdmin(session);
+            adminService.requireAdmin(session);
             List<Map<String, Object>> ranking = adminService.getUserStorageRanking(limit);
             return ApiResponse.success("获取存储排行成功", ranking);
         } catch (Exception e) {
@@ -257,7 +224,7 @@ public class AdminController {
     @GetMapping("/system/storage/statistics")
     public ApiResponse<Map<String, Object>> getStorageStatistics(HttpSession session) {
         try {
-            requireAdmin(session);
+            adminService.requireAdmin(session);
             Map<String, Object> stats = adminService.getStorageStatistics();
             return ApiResponse.success("获取存储统计成功", stats);
         } catch (Exception e) {
@@ -280,7 +247,7 @@ public class AdminController {
             @RequestParam(defaultValue = "20") int size,
             HttpSession session) {
         try {
-            requireAdmin(session);
+            adminService.requireAdmin(session);
             Page<LoginLog> logs = loginLogService.getLoginLogs(userId, startDate, endDate, loginStatus, page - 1, size);
             
             Map<String, Object> result = new HashMap<>();
@@ -304,7 +271,7 @@ public class AdminController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endDate,
             HttpSession session) {
         try {
-            requireAdmin(session);
+            adminService.requireAdmin(session);
             if (startDate == null) {
                 startDate = LocalDateTime.now().minusDays(7); // 默认最近7天
             }

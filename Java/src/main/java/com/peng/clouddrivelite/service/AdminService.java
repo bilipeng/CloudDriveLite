@@ -5,13 +5,16 @@ import com.peng.clouddrivelite.entity.User;
 import com.peng.clouddrivelite.repository.FileRepository;
 import com.peng.clouddrivelite.repository.LoginLogRepository;
 import com.peng.clouddrivelite.repository.UserRepository;
+import com.peng.clouddrivelite.util.SessionKeys;
+import jakarta.persistence.criteria.Predicate;
+import jakarta.servlet.http.HttpSession;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
-import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import jakarta.persistence.criteria.Predicate;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -33,6 +36,33 @@ public class AdminService {
         this.userRepository = userRepository;
         this.fileRepository = fileRepository;
         this.loginLogRepository = loginLogRepository;
+    }
+
+    /**
+     * 从 Session 中获取当前用户 ID
+     */
+    public Long requireUserId(HttpSession session) {
+        Object userIdObj = session.getAttribute(SessionKeys.SESSION_USER_ID);
+        if (userIdObj == null) {
+            throw new RuntimeException("未登录");
+        }
+        return Long.valueOf(userIdObj.toString());
+    }
+
+    /**
+     * 检查当前 Session 是否已激活管理员会话且用户为管理员
+     */
+    public void requireAdmin(HttpSession session) {
+        Object adminActivated = session.getAttribute(SessionKeys.SESSION_ADMIN_ACTIVATED);
+        if (adminActivated == null || !Boolean.TRUE.equals(adminActivated)) {
+            throw new RuntimeException("管理员 Session 未激活，请先激活管理员 Session");
+        }
+        Long userId = requireUserId(session);
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("用户不存在"));
+        if (!"ADMIN".equals(user.getRole())) {
+            throw new RuntimeException("需要管理员权限");
+        }
     }
 
     /**
