@@ -3,7 +3,7 @@ package com.peng.clouddrivelite.control;
 import com.peng.clouddrivelite.entity.User;
 import com.peng.clouddrivelite.service.LoginLogService;
 import com.peng.clouddrivelite.service.UserService;
-import com.peng.clouddrivelite.util.PasswordUtil;
+import com.peng.clouddrivelite.util.RequestUtil;
 import com.peng.clouddrivelite.util.SessionKeys;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
@@ -13,7 +13,7 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
-import java.util.Optional;
+
 
 @RestController
 @RequestMapping("/api/auth")
@@ -28,55 +28,27 @@ public class AuthController {
         this.loginLogService = loginLogService;
     }
 
-    /**
-     * 获取客户端IP地址
-     */
-    private String getClientIp(HttpServletRequest request) {
-        String ip = request.getHeader("X-Forwarded-For");
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("Proxy-Client-IP");
-        }
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("WL-Proxy-Client-IP");
-        }
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getRemoteAddr();
-        }
-        // 处理多个IP的情况，取第一个
-        if (ip != null && ip.contains(",")) {
-            ip = ip.split(",")[0].trim();
-        }
-        return ip;
-    }
-
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestParam @NotBlank String username,
                                       @RequestParam @NotBlank String userNumber,
                                       @RequestParam @NotBlank String phoneNumber,
                                       @RequestParam @NotBlank String password,
                                       @RequestParam(required = false) String email) {
-        if (userService.existsByUserNumber(userNumber)) {
-            return ResponseEntity.badRequest().body(Map.of("message", "用户号码已存在"));
+        try {
+            User user = userService.register(username, userNumber, phoneNumber, password, email);
+            return ResponseEntity.ok(Map.of("id", user.getId(), "userNumber", user.getUserNumber()));
+        } catch (RuntimeException e) {
+            // 业务异常统一映射为 400
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         }
-        if (userService.existsByUsername(username)) {
-            return ResponseEntity.badRequest().body(Map.of("message", "用户名已存在"));
-        }
-        if (userService.existsByPhoneNumber(phoneNumber)) {
-            return ResponseEntity.badRequest().body(Map.of("message", "手机号已存在"));
-        }
-        if (email != null && !email.isBlank() && userService.existsByEmail(email)) {
-            return ResponseEntity.badRequest().body(Map.of("message", "邮箱已存在"));
-        }
-        User user = userService.register(username, userNumber, phoneNumber, password, email);
-        return ResponseEntity.ok(Map.of("id", user.getId(), "userNumber", user.getUserNumber()));
     }
 
     @PostMapping("/login")
-public ResponseEntity<?> login(@RequestParam @NotBlank String userNumber,
-                               @RequestParam @NotBlank String password,
+    public ResponseEntity<?> login(@RequestParam @NotBlank String userNumber,
+                                   @RequestParam @NotBlank String password,
                                    HttpSession session,
                                    HttpServletRequest request) {
-        String ipAddress = getClientIp(request);
+        String ipAddress = RequestUtil.getClientIp(request);
         String userAgent = request.getHeader("User-Agent");
         
     return userService.findByUserNumber(userNumber)
@@ -152,40 +124,12 @@ public ResponseEntity<?> login(@RequestParam @NotBlank String userNumber,
             @RequestParam(required = false) String phoneNumber,
             @RequestParam(required = false) String email,
             @RequestParam @NotBlank String newPassword) {
-        
-        // 验证参数：手机号和邮箱必须提供一个
-        if ((phoneNumber == null || phoneNumber.isBlank()) && 
-            (email == null || email.isBlank())) {
-            return ResponseEntity.badRequest()
-                    .body(Map.of("message", "请提供手机号或邮箱"));
+        try {
+            userService.resetPassword(userNumber, phoneNumber, email, newPassword);
+            return ResponseEntity.ok(Map.of("message", "密码重置成功，请使用新密码登录"));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         }
-        
-        if (newPassword.length() < 6) {
-            return ResponseEntity.badRequest()
-                    .body(Map.of("message", "密码长度至少6位"));
-        }
-        
-        // 验证用户是否存在且信息匹配
-        Optional<User> userOpt;
-        if (phoneNumber != null && !phoneNumber.isBlank()) {
-            // 通过手机号验证
-            userOpt = userService.findByUserNumberAndPhoneNumber(userNumber, phoneNumber);
-        } else {
-            // 通过邮箱验证
-            userOpt = userService.findByUserNumberAndEmail(userNumber, email);
-        }
-        
-        if (userOpt.isEmpty()) {
-            return ResponseEntity.badRequest()
-                    .body(Map.of("message", "用户不存在或信息不匹配"));
-        }
-        
-        // 重置密码
-        User user = userOpt.get();
-        user.setPassword(PasswordUtil.hash(newPassword));
-        userService.saveUser(user);
-        
-        return ResponseEntity.ok(Map.of("message", "密码重置成功，请使用新密码登录"));
     }
 }
 

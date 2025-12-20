@@ -2,8 +2,10 @@ package com.peng.clouddrivelite.control;
 
 import com.peng.clouddrivelite.dto.ApiResponse;
 import com.peng.clouddrivelite.dto.FileInfoDto;
+import com.peng.clouddrivelite.dto.ChunkUploadParams;
 import com.peng.clouddrivelite.entity.FileObject;
 import com.peng.clouddrivelite.service.FileService;
+import com.peng.clouddrivelite.service.FileDtoService;
 import com.peng.clouddrivelite.util.SessionKeys;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.core.io.Resource;
@@ -19,110 +21,53 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+/**
+ * 文件管理控制器
+ * <p>
+ * 处理所有与文件操作相关的HTTP请求，包括：
+ * - 文件上传（支持分片上传）
+ * - 文件下载和预览
+ * - 文件管理（创建、重命名、移动、删除）
+ * - 文件列表和搜索
+ * </p>
+ * 所有操作都需要用户登录，并且只能操作用户自己的文件
+ */
 @RestController
 @RequestMapping("/api/files")
 @Validated
 public class FileController {
 
     private final FileService fileService;
+    private final FileDtoService fileDtoService;
     private static final Logger log = LoggerFactory.getLogger(FileController.class);
 
-    // 文件大小限制：100MB
-    //private static final long MAX_FILE_SIZE = 100 * 1024 * 1024;
-
-    // 允许的文件类型（可选，用于额外验证）
-    private static final String[] ALLOWED_EXTENSIONS = {
-            "jpg", "jpeg", "png", "gif", "bmp", "webp", "svg", "ico", "tiff", "tif",
-            "mp4", "avi", "mov", "wmv", "flv", "webm", "mkv", "3gp",
-            "mp3", "wav", "flac", "aac", "ogg", "wma", "m4a",
-            "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "rtf",
-            "zip", "rar", "7z", "tar", "gz", "bz2",
-            "java", "js", "css", "html", "htm", "xml", "json", "yaml", "yml", "sql", "py", "cpp", "c", "php",
-            "exe", "msi", "dmg", "iso", "apk"
-    };
-
-    public FileController(FileService fileService) {
+    public FileController(FileService fileService, FileDtoService fileDtoService) {
         this.fileService = fileService;
+        this.fileDtoService = fileDtoService;
     }
 
+    /**
+     * 从 Session 中强制获取当前登录用户。
+     * <p>
+     * 本项目的鉴权方式是：登录成功后把 userId 写入 HttpSession（见 AuthController.login）。
+     * 之后所有需要登录的接口都通过这里读取 userId。
+     * </p>
+     *
+     * <p>
+     * 注意：这里仅负责“是否登录”的判断；
+     * 对于具体文件是否属于当前用户，还需要在后续通过 {@code fileService.findOwned(userId, fileId)} 校验。
+     * </p>
+     */
     private Long requireUser(HttpSession session) {
         Object userId = session.getAttribute(SessionKeys.SESSION_USER_ID);
         if (userId == null) {
             throw new RuntimeException("未登录");
         }
         return Long.valueOf(userId.toString());
-    }
-
-    /**
-     * 验证上传的文件
-     *
-     * @param file 上传的文件
-     * @throws RuntimeException 如果文件验证失败
-     */
-    private void validateFile(MultipartFile file) {
-        // 检查文件是否为空
-        if (file == null || file.isEmpty()) {
-            throw new RuntimeException("文件不能为空");
-        }
-
-        // 检查文件名
-        String originalFilename = file.getOriginalFilename();
-        if (originalFilename == null || originalFilename.trim().isEmpty()) {
-            throw new RuntimeException("文件名不能为空");
-        }
-
-        // 检查文件大小
-//        if (file.getSize() > MAX_FILE_SIZE) {
-//            throw new RuntimeException("文件大小不能超过 " + (MAX_FILE_SIZE / 1024 / 1024) + "MB");
-//        }
-
-        // 检查文件扩展名
-        String extension = getFileExtension(originalFilename);
-        if (extension != null && !isAllowedExtension(extension)) {
-            throw new RuntimeException("不支持的文件类型: " + extension);
-        }
-
-        System.out.println("文件验证通过: " + originalFilename + " (" + file.getSize() + " bytes)");
-    }
-
-    /**
-     * 获取文件扩展名
-     *
-     * @param filename 文件名
-     * @return 扩展名（小写，不包含点号）
-     */
-    private String getFileExtension(String filename) {
-        if (filename == null || filename.isEmpty()) {
-            return null;
-        }
-        int lastDotIndex = filename.lastIndexOf('.');
-        if (lastDotIndex == -1 || lastDotIndex == filename.length() - 1) {
-            return null;
-        }
-        return filename.substring(lastDotIndex + 1).toLowerCase();
-    }
-
-    /**
-     * 检查文件扩展名是否被允许
-     *
-     * @param extension 文件扩展名
-     * @return 是否允许
-     */
-    private boolean isAllowedExtension(String extension) {
-        if (extension == null || extension.isEmpty()) {
-            return false;
-        }
-        for (String allowed : ALLOWED_EXTENSIONS) {
-            if (allowed.equalsIgnoreCase(extension)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     @GetMapping
@@ -136,6 +81,7 @@ public class FileController {
             log.debug("list files userId={}, folderId={}, page={}, size={}, keyword={}", userId, folderId, page, size, keyword);
 
             Page<FileObject> files;
+            // .trim().isEmpty() 防止空指针异常
             if (keyword != null && !keyword.trim().isEmpty()) {
                 // 搜索模式
                 files = fileService.search(userId, keyword.trim(), page - 1, size);
@@ -148,7 +94,7 @@ public class FileController {
 
             // 转换为前端友好的DTO
             List<FileInfoDto> fileInfoList = files.getContent().stream()
-                    .map(this::convertToFileInfoDto)
+                    .map(fileDtoService::convertToFileInfoDto)
                     .collect(Collectors.toList());
 
             // 构建分页信息
@@ -175,7 +121,7 @@ public class FileController {
         try {
             Long userId = requireUser(session);
             FileObject folder = fileService.createFolder(userId, folderName, parentId);
-            FileInfoDto info = convertToFileInfoDto(folder);
+            FileInfoDto info = fileDtoService.convertToFileInfoDto(folder);
             return ApiResponse.success("文件夹创建成功", info);
         } catch (Exception e) {
             return ApiResponse.error("创建文件夹失败: " + e.getMessage());
@@ -190,7 +136,7 @@ public class FileController {
         try {
             Long userId = requireUser(session);
             FileObject updated = fileService.rename(userId, id, newName);
-            return ApiResponse.success("重命名成功", convertToFileInfoDto(updated));
+            return ApiResponse.success("重命名成功", fileDtoService.convertToFileInfoDto(updated));
         } catch (Exception e) {
             return ApiResponse.error("重命名失败: " + e.getMessage());
         }
@@ -204,7 +150,7 @@ public class FileController {
         try {
             Long userId = requireUser(session);
             FileObject updated = fileService.move(userId, id, targetParentId);
-            return ApiResponse.success("移动成功", convertToFileInfoDto(updated));
+            return ApiResponse.success("移动成功", fileDtoService.convertToFileInfoDto(updated));
         } catch (Exception e) {
             return ApiResponse.error("移动失败: " + e.getMessage());
         }
@@ -216,39 +162,74 @@ public class FileController {
                                                                 HttpSession session) {
         try {
             Long userId = requireUser(session);
-            List<FileObject> path = fileService.getFolderPath(userId, folderId);
-            List<Map<String, Object>> breadcrumb = new ArrayList<>();
-            breadcrumb.add(Map.of("id", 0L, "name", "根目录"));
-            for (FileObject f : path) {
-                breadcrumb.add(Map.of("id", f.getId(), "name", f.getFileName()));
-            }
+            List<Map<String, Object>> breadcrumb = fileDtoService.buildBreadcrumb(folderId, userId);
             return ApiResponse.success("获取路径成功", breadcrumb);
         } catch (Exception e) {
             return ApiResponse.error("获取路径失败: " + e.getMessage());
         }
     }
 
-    // Flow.js / simple-uploader.js 分片探测：返回200表示该分片已存在，404表示不存在
+    /**
+     * 检查分片是否已上传
+     * <p>
+     * 支持断点续传，前端在上传每个分片前会先调用此接口检查该分片是否已上传。
+     * - 返回 200 OK: 分片已存在，无需重复上传
+     * - 返回 204 No Content: 分片不存在，需要上传
+     * </p>
+     *
+     * @param identifier 文件唯一标识符
+     * @param chunkNumber 分片编号（从1开始）
+     * @param altIdentifier 备用标识符参数名
+     * @param altChunkNumber 备用分片编号参数名
+     * @param session HTTP会话，用于获取当前登录用户
+     * @return 200-分片已存在，204-分片不存在
+     */
     @GetMapping(path = "/upload")
     public ResponseEntity<Void> checkChunk(
             @RequestParam(name = "resumableIdentifier", required = false) String identifier,
             @RequestParam(name = "resumableChunkNumber", required = false) Integer chunkNumber,
-            // 兼容备用命名
+
+            // 兼容备用命名（某些前端库可能使用不同的参数名）
             @RequestParam(name = "identifier", required = false) String altIdentifier,
             @RequestParam(name = "chunkNumber", required = false) Integer altChunkNumber,
             HttpSession session) {
         Long userId = requireUser(session);
         if (identifier == null && altIdentifier != null) identifier = altIdentifier;
         if (chunkNumber == null && altChunkNumber != null) chunkNumber = altChunkNumber;
+
         if (identifier == null || chunkNumber == null) {
             return ResponseEntity.badRequest().build();
         }
         log.debug("check chunk userId={}, id={}, no={}", userId, identifier, chunkNumber);
+
+        //服务器会去临时文件夹或数据库里查找：
+        // 针对这个用户（userId）、这个文件（identifier），第 chunkNumber 个分片是否已经物理存在。
         boolean exists = fileService.chunkExists(userId, identifier, chunkNumber);
         // 为避免某些前端库将 404 视为错误，这里不存在返回 204 No Content
         return exists ? ResponseEntity.ok().build() : ResponseEntity.noContent().build();
     }
 
+    /**
+     * 处理文件上传请求
+     * 支持普通文件上传和分片上传。对于大文件，前端会将文件分成多个分片上传，
+     * 每个分片都会调用此接口，后端负责保存分片并在所有分片上传完成后合并。
+     * @param file          上传的文件分片
+     * @param folderId      目标文件夹ID，默认为0（根目录）
+     * @param chunkNumber   当前分片编号（从1开始）
+     * @param totalChunks   总分片数
+     * @param chunkSize    分片大小（字节）
+     * @param totalSize     文件总大小（字节）
+     * @param identifier    文件唯一标识符，用于标识同一个文件的不同分片
+     * @param filename      原始文件名
+     * @param altChunkNumber    备用分片编号参数名
+     * @param altTotalChunks    备用总分片数参数名
+     * @param altChunkSize      备用分片大小参数名
+     * @param altTotalSize      备用文件总大小参数名
+     * @param altIdentifier     备用文件标识符参数名
+     * @param altFilename       备用文件名参数名
+     * @param session       HTTP会话，用于获取当前登录用户
+     * @return 上传结果，包含文件信息或分片上传进度
+     */
     @PostMapping(path = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ApiResponse<FileInfoDto> upload(
             @RequestParam("file") MultipartFile file,
@@ -283,36 +264,52 @@ public class FileController {
             log.debug("chunk params: id={}, no={}, total={}", identifier, chunkNumber, totalChunks);
             log.debug("alt   params: id={}, no={}, total={}", altIdentifier, altChunkNumber, altTotalChunks);
 
-            // 参数回填（若默认命名为空则使用备用命名）
+            // 3. 参数回填（若默认命名为空则使用备用命名）
+            // 这里处理前端可能使用不同参数名的情况，提高接口兼容性
             if (identifier == null && altIdentifier != null) identifier = altIdentifier;
             if (chunkNumber == null && altChunkNumber != null) chunkNumber = altChunkNumber;
             if (totalChunks == null && altTotalChunks != null) totalChunks = altTotalChunks;
             if (chunkSize == null && altChunkSize != null) chunkSize = altChunkSize;
             if (totalSize == null && altTotalSize != null) totalSize = altTotalSize;
             if ((filename == null || filename.isBlank()) && altFilename != null) filename = altFilename;
-            // 统一走分片流程：如果未提供分片参数，则视为 1/1 分片
-            if (filename == null || filename.isBlank()) filename = file.getOriginalFilename();
-            if (totalSize == null || totalSize <= 0) totalSize = file.getSize();
-            if (totalChunks == null || totalChunks <= 0) totalChunks = 1;
-            if (chunkNumber == null || chunkNumber <= 0) chunkNumber = 1;
-            if (identifier == null || identifier.isBlank()) {
-                identifier = (filename + "_" + totalSize + "_" + userId).replaceAll("[^a-zA-Z0-9_-]", "");
+
+            // 4. 规范化上传参数
+            // 将分散的参数封装到 ChunkUploadParams 对象中，便于后续处理
+            ChunkUploadParams params = new ChunkUploadParams(identifier, chunkNumber, totalChunks,
+                    chunkSize, totalSize, filename);
+            // 对参数进行校验和规范化处理
+            params.normalize(file.getOriginalFilename(), file.getSize(), userId);
+
+            // 5. 保存分片到临时存储
+            // 每个分片会以 {userId}/{identifier}/{chunkNumber} 的路径保存
+            fileService.saveChunk(userId, params.getIdentifier(), params.getChunkNumber(), file);
+            if (log.isDebugEnabled()) {
+                log.debug("saved chunk {}/{} id={}", 
+                    params.getChunkNumber(), 
+                    params.getTotalChunks(), 
+                    params.getIdentifier()
+                );
             }
 
-            // 保存分片
-            fileService.saveChunk(userId, identifier, chunkNumber, file);
-            if (log.isDebugEnabled()) log.debug("saved chunk {}/{} id={}", chunkNumber, totalChunks, identifier);
-
-            // 尝试合并
-            var merged = fileService.tryMergeChunks(userId, identifier, totalChunks,
-                    filename,
-                    totalSize,
-                    folderId);
+            // 6. 如果是最后一个分片，尝试合并所有分片
+            // 这里会检查是否所有分片都已上传，如果是则合并，否则返回分片上传成功的响应
+            var merged = fileService.tryMergeChunks(
+                userId, 
+                params.getIdentifier(), 
+                params.getTotalChunks(),
+                params.getFilename(), 
+                params.getTotalSize(), 
+                folderId
+            );
+            
+            // 7. 处理合并结果
             if (merged.isPresent()) {
-                FileInfoDto fileInfo = convertToFileInfoDto(merged.get());
+                // 合并成功，将文件信息转换为DTO并返回
+                FileInfoDto fileInfo = fileDtoService.convertToFileInfoDto(merged.get());
                 log.info("merge completed, fileId={}", merged.get().getId());
                 return ApiResponse.success("文件上传成功", fileInfo);
             } else {
+                // 非最后一个分片或合并未完成，返回分片上传成功响应
                 return ApiResponse.success("分片上传成功", null);
             }
         } catch (Exception e) {
@@ -320,21 +317,20 @@ public class FileController {
             return ApiResponse.error("文件上传失败: " + e.getMessage());
         }
     }
-    // 兼容旧接口，如不需要可删除
-    // @GetMapping("/list") ...
-    /**
-     * 格式化文件大小显示
-     *
-     * @param bytes 字节数
-     * @return 格式化后的大小字符串
-     */
-    private String formatFileSize(long bytes) {
-        if (bytes < 1024) return bytes + " B";
-        if (bytes < 1024 * 1024) return String.format("%.1f KB", bytes / 1024.0);
-        if (bytes < 1024 * 1024 * 1024) return String.format("%.1f MB", bytes / (1024.0 * 1024.0));
-        return String.format("%.1f GB", bytes / (1024.0 * 1024.0 * 1024.0));
-    }
 
+    /**
+     * 下载文件（二进制流）。
+     * <p>
+     * 返回 {@link Resource}：Spring 会把它作为响应体输出给浏览器。
+     * 这里通过设置响应头 Content-Disposition=attachment，强制浏览器触发“下载”行为。
+     * </p>
+     *
+     * <p>
+     * 鉴权流程：
+     * 1) requireUser(session) 得到 userId（确认已登录）
+     * 2) fileService.findOwned(userId, id) 确认文件归属当前用户
+     * </p>
+     */
     @GetMapping("/{id}/download")
     public ResponseEntity<Resource> download(@PathVariable Long id, HttpSession session) {
         try {
@@ -344,7 +340,8 @@ public class FileController {
             FileObject fo = fileService.findOwned(userId, id)
                     .orElseThrow(() -> new RuntimeException("文件不存在或无权限"));
 
-            log.info("download file: {} ({} )", fo.getFileName(), formatFileSize(fo.getFileSize()));
+            log.info("download file: {} ({})", fo.getFileName(), 
+                    com.peng.clouddrivelite.util.FileUtils.formatFileSize(fo.getFileSize()));
 
             Resource resource = fileService.loadAsResource(fo);
             String encoded = URLEncoder.encode(fo.getFileName(), StandardCharsets.UTF_8);
@@ -359,6 +356,12 @@ public class FileController {
         }
     }
 
+    /**
+     * 获取下载链接（JSON）。
+     * <p>
+     * 与 download 不同：此接口不直接返回文件内容，而是返回前端可用的下载 URL 以及文件名、大小等信息。
+     * </p>
+     */
     @GetMapping("/{id}/download-url")
     public ApiResponse<Map<String, String>> getDownloadUrl(@PathVariable Long id, HttpSession session) {
         try {
@@ -368,12 +371,7 @@ public class FileController {
             FileObject fo = fileService.findOwned(userId, id)
                     .orElseThrow(() -> new RuntimeException("文件不存在或无权限"));
 
-            String downloadUrl = "/api/files/" + id + "/download";
-            Map<String, String> result = Map.of(
-                    "downloadUrl", downloadUrl,
-                    "fileName", fo.getFileName(),
-                    "fileSize", formatFileSize(fo.getFileSize())
-            );
+            Map<String, String> result = fileDtoService.buildDownloadUrlInfo(id, fo.getFileName(), fo.getFileSize());
 
             return ApiResponse.success("获取下载链接成功", result);
         } catch (Exception e) {
@@ -382,6 +380,14 @@ public class FileController {
         }
     }
 
+    /**
+     * 预览文件（二进制流）。
+     * <p>
+     * 与 download 的差别：
+     * - 不设置 Content-Disposition=attachment，让浏览器自行决定是“直接展示”还是“下载”。
+     * - 设置 Content-Type，浏览器会据此决定展示方式（例如 image/* 可直接展示）。
+     * </p>
+     */
     @GetMapping("/{id}/preview")
     public ResponseEntity<Resource> preview(@PathVariable Long id, HttpSession session) {
         try {
@@ -412,6 +418,13 @@ public class FileController {
         }
     }
 
+    /**
+     * 获取预览链接（JSON）。
+     * <p>
+     * 当前实现主要用于“图片预览”：如果不是图片类型，则直接返回错误。
+     * 实际预览内容仍由 /preview 接口提供。
+     * </p>
+     */
     @GetMapping("/{id}/preview-url")
     public ApiResponse<Map<String, String>> getPreviewUrl(@PathVariable Long id, HttpSession session) {
         try {
@@ -425,12 +438,7 @@ public class FileController {
                 return ApiResponse.error("仅支持图片预览，当前文件类型: " + fo.getFileType());
             }
 
-            String previewUrl = "/api/files/" + id + "/preview";
-            Map<String, String> result = Map.of(
-                    "previewUrl", previewUrl,
-                    "fileName", fo.getFileName(),
-                    "fileType", fo.getFileType()
-            );
+            Map<String, String> result = fileDtoService.buildPreviewUrlInfo(id, fo.getFileName(), fo.getFileType());
 
             return ApiResponse.success("获取预览链接成功", result);
         } catch (Exception e) {
@@ -439,6 +447,12 @@ public class FileController {
         }
     }
 
+    /**
+     * （兼容/历史接口）获取 RawBox 预览链接。
+     * <p>
+     * 代码注释中说明：这里已经不再依赖 RawBox，而是直接返回后端 /preview 接口的链接。
+     * </p>
+     */
     @GetMapping("/{id}/rawbox-preview")
     public ApiResponse<Map<String, String>> getRawBoxPreviewUrl(@PathVariable Long id, HttpSession session) {
         try {
@@ -449,13 +463,7 @@ public class FileController {
                     .orElseThrow(() -> new RuntimeException("文件不存在或无权限"));
 
             // 直接使用我们的后端预览接口，不依赖 RawBox
-            String previewUrl = "/api/files/" + id + "/preview";
-            
-            Map<String, String> result = Map.of(
-                    "previewUrl", previewUrl,
-                    "fileName", fo.getFileName(),
-                    "fileType", fo.getFileType()
-            );
+            Map<String, String> result = fileDtoService.buildPreviewUrlInfo(id, fo.getFileName(), fo.getFileType());
 
             return ApiResponse.success("获取预览链接成功", result);
         } catch (Exception e) {
@@ -496,27 +504,4 @@ public class FileController {
         }
     }
 
-    /**
-     * 将FileObject转换为FileInfoDto
-     *
-     * @param fileObject 文件对象
-     * @return 前端友好的文件信息DTO
-     */
-    private FileInfoDto convertToFileInfoDto(FileObject fileObject) {
-        FileInfoDto dto = new FileInfoDto();
-        dto.setId(fileObject.getId());
-        dto.setParentId(fileObject.getParentId());
-        dto.setFileName(fileObject.getFileName());
-        dto.setFileType(fileObject.getFileType());
-        dto.setFileSize(fileObject.getFileSize());
-        dto.setFileSizeFormatted(fileObject.isFolder() ? "-" : formatFileSize(fileObject.getFileSize()));
-        dto.setDownloadUrl(fileObject.isFile() ? ("/api/files/" + fileObject.getId() + "/download") : null);
-        dto.setPreviewUrl(fileObject.isFile() ? ("/api/files/" + fileObject.getId() + "/preview") : null);
-        dto.setIsImage(fileObject.isFile() && fileService.isImage(fileObject));
-        dto.setFolder(fileObject.isFolder());
-        dto.setUploadedTime(fileObject.getUploadedTime());
-        return dto;
-    }
 }
-
-
